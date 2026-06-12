@@ -1,0 +1,10 @@
+# Binaries
+veo3-mcp
+veo3-mcp.exe
+
+# OS files
+.DS_Store
+
+# Local Env
+.env
+.env.local
