@@ -83,12 +83,7 @@ func main() {
 		outputDir = os.Getenv("VEO3_OUTPUT_DIR")
 	}
 	if outputDir == "" {
-		home, err := os.UserHomeDir()
-		if err == nil {
-			outputDir = filepath.Join(home, "Videos", "Generated")
-		} else {
-			outputDir = "./videos"
-		}
+		outputDir = "./veo-output"
 	}
 	outputDir = filepath.Clean(outputDir)
 
@@ -154,7 +149,7 @@ func main() {
 
 		model := toolArgs.Model
 		if model == "" {
-			model = "veo-3.0-generate-preview"
+			model = getDefaultModel()
 		}
 
 		res, err := generateVideoHelper(ctx, client, toolArgs.Prompt, model, nil)
@@ -211,7 +206,7 @@ func main() {
 
 		model := toolArgs.Model
 		if model == "" {
-			model = "veo-3.0-generate-preview"
+			model = getDefaultModel()
 		}
 
 		// Read image bytes
@@ -328,12 +323,12 @@ func ValidateAuthentication(cliKey string) (string, error) {
 		fmt.Fprintln(os.Stderr, "✓ Found API key from CLI argument")
 		return cliKey, nil
 	}
-	if key := os.Getenv("NANOBANANA_GEMINI_API_KEY"); key != "" {
-		fmt.Fprintln(os.Stderr, "✓ Found NANOBANANA_GEMINI_API_KEY environment variable")
+	if key := os.Getenv("VEO_GEMINI_API_KEY"); key != "" {
+		fmt.Fprintln(os.Stderr, "✓ Found VEO_GEMINI_API_KEY environment variable")
 		return key, nil
 	}
-	if key := os.Getenv("NANOBANANA_GOOGLE_API_KEY"); key != "" {
-		fmt.Fprintln(os.Stderr, "✓ Found NANOBANANA_GOOGLE_API_KEY environment variable")
+	if key := os.Getenv("VEO_GOOGLE_API_KEY"); key != "" {
+		fmt.Fprintln(os.Stderr, "✓ Found VEO_GOOGLE_API_KEY environment variable")
 		return key, nil
 	}
 	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
@@ -501,3 +496,11 @@ func formatJSONResult(res any, err error) (*mcp.CallToolResult, any, error) {
 		},
 	}, nil, nil
 }
+
+func getDefaultModel() string {
+	if m := os.Getenv("VEO_DEFAULT_MODEL"); m != "" {
+		return m
+	}
+	return "veo-3.0-generate-preview"
+}
+

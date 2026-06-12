@@ -8,3 +8,4 @@ veo3-mcp.exe
 # Local Env
 .env
 .env.local
+.gemini/backup

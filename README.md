@@ -6,7 +6,7 @@ A high-performance Model Context Protocol (MCP) server written in Golang, provid
 
 - **Text-to-Video**: Generate stunning 8-second 720p videos with audio using Gemini/Veo 3.
 - **Image-to-Video**: Animate starting images with natural motion using raw inline bytes (no complex pre-uploading required).
-- **Environment Autodetect**: Supports multiple fallback configurations including `GEMINI_CLI_APP` (consistent with `nanobanana-ng`).
+- **Environment Autodetect**: Supports multiple fallback configurations including `GEMINI_CLI_APP`.
 - **Path Traversal Security**: Built-in boundary protection to prevent directory traversal escapes.
 
 ## Installation
@@ -35,18 +35,23 @@ Start the MCP server with the desired transport type:
 - `--transport`: Transport type (`stdio` or `sse`). Default: `stdio`
 - `--host`: Host address for SSE. Default: `127.0.0.1`
 - `--port`: Port for SSE. Default: `8080`
-- `--output-dir`: Absolute directory path to save generated videos. If empty, falls back to `VEO3_OUTPUT_DIR` environment or `~/Videos/Generated`.
+- `--output-dir`: Absolute directory path to save generated videos. If empty, falls back to `VEO3_OUTPUT_DIR` environment or `./veo-output`.
 - `--api-key`: Explicit Gemini API Key (overrides env vars).
 
 ## Environment Configuration
 
-The server supports multiple environment fallback configurations for authentication:
+The server supports the following environment variable configurations:
 
-1. `NANOBANANA_GEMINI_API_KEY`
-2. `NANOBANANA_GOOGLE_API_KEY`
-3. `GEMINI_API_KEY`
-4. `GOOGLE_API_KEY`
+### Authentication Fallbacks
+1. `VEO_GEMINI_API_KEY` (Primary)
+2. `VEO_GOOGLE_API_KEY` (Primary)
+3. `GEMINI_API_KEY` (Fallback)
+4. `GOOGLE_API_KEY` (Fallback)
 5. `GEMINI_CLI_APP` (Fallback used by `gemini-cli`)
+
+### Global Defaults
+- `VEO_DEFAULT_MODEL`: Overrides the default video model (falls back to `veo-3.0-generate-preview` if unset).
+- `VEO3_OUTPUT_DIR`: Overrides the default video storage output directory (falls back to `./veo-output` if unset).
 
 ## MCP Tools
 
