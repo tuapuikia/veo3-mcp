@@ -50,7 +50,7 @@ The server supports the following environment variable configurations:
 5. `GEMINI_CLI_APP` (Fallback used by `gemini-cli`)
 
 ### Global Defaults
-- `VEO_DEFAULT_MODEL`: Overrides the default video model (falls back to `veo-3.0-generate-preview` if unset).
+- `VEO_DEFAULT_MODEL`: Overrides the default video model (falls back to `veo-3.1-fast-generate-preview` if unset).
 - `VEO3_OUTPUT_DIR`: Overrides the default video storage output directory (falls back to `./veo-output` if unset).
 
 ## MCP Tools
@@ -59,14 +59,22 @@ The server supports the following environment variable configurations:
 Generate a video using Google Veo 3 from a text prompt.
 - **Arguments**:
   - `prompt` (string, required): Descriptive prompt.
-  - `model` (string, optional): One of `veo-3.0-generate-preview` (default), `veo-3.0-fast-generate-preview`, or `veo-2.0-generate-001`.
+  - `model` (string, optional): Veo model to use (defaults to `veo-3.1-fast-generate-preview`; other valid models: `veo-3.1-generate-preview`, `veo-3.1-lite-generate-preview`, `veo-2.0-generate-001`; arbitrary custom models are also accepted).
+
+### Inline Prompt Model Selection (Natural Language)
+Instead of passing the `model` parameter explicitly, you can specify it directly inside your prompt using natural language keywords or explicit instructions. The server automatically detects the model, overrides the selection, and cleans the prompt before submission.
+- **Examples**:
+  - *"A futuristic city in the style of cyberpunk **using model veo-3.1-lite-generate-preview***"
+  - *"A soaring eagle over grand canyon **with veo 3.1 lite***"
+  - *"Cat chasing a laser **using veo 2***"
+  - *"Majestic waterfall in forest **model veo-custom-model***" (Arbitrary custom models can also be overridden this way)
 
 ### 2. `generate_video_from_image`
 Animate a starting image with natural motion.
 - **Arguments**:
-  - `prompt` (string, required): Descriptive movement prompt.
+  - `prompt` (string, required): Descriptive movement prompt (also supports inline prompt model selection).
   - `image_path` (string, required): Absolute path or path relative to the output directory.
-  - `model` (string, optional): Same model list as above.
+  - `model` (string, optional): Same model selection options as above.
 
 ### 3. `list_generated_videos`
 List all generated videos in the output directory.

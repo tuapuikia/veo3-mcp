@@ -130,9 +130,8 @@ func main() {
 				},
 				"model": map[string]any{
 					"type":        "string",
-					"description": "Veo model to use (veo-3.0-generate-preview, veo-3.0-fast-generate-preview, veo-2.0-generate-001)",
-					"enum":        []string{"veo-3.0-generate-preview", "veo-3.0-fast-generate-preview", "veo-2.0-generate-001"},
-					"default":     "veo-3.0-generate-preview",
+					"description": "Veo model to use (defaults to veo-3.1-fast-generate-preview; other valid models: veo-3.1-generate-preview, veo-3.1-lite-generate-preview, veo-2.0-generate-001; arbitrary custom models are also accepted)",
+					"default":     "veo-3.1-fast-generate-preview",
 				},
 			},
 			"required": []string{"prompt"},
@@ -148,11 +147,21 @@ func main() {
 		}
 
 		model := toolArgs.Model
+		prompt := toolArgs.Prompt
+
+		parsedPrompt, detectedModel := parseModelAndPrompt(prompt)
+		if detectedModel != "" {
+			if model == "" {
+				model = detectedModel
+			}
+			prompt = parsedPrompt
+		}
+
 		if model == "" {
 			model = getDefaultModel()
 		}
 
-		res, err := generateVideoHelper(ctx, client, toolArgs.Prompt, model, nil)
+		res, err := generateVideoHelper(ctx, client, prompt, model, nil)
 		return formatJSONResult(res, err)
 	})
 
@@ -173,9 +182,8 @@ func main() {
 				},
 				"model": map[string]any{
 					"type":        "string",
-					"description": "Veo model to use (veo-3.0-generate-preview, veo-3.0-fast-generate-preview, veo-2.0-generate-001)",
-					"enum":        []string{"veo-3.0-generate-preview", "veo-3.0-fast-generate-preview", "veo-2.0-generate-001"},
-					"default":     "veo-3.0-generate-preview",
+					"description": "Veo model to use (defaults to veo-3.1-fast-generate-preview; other valid models: veo-3.1-generate-preview, veo-3.1-lite-generate-preview, veo-2.0-generate-001; arbitrary custom models are also accepted)",
+					"default":     "veo-3.1-fast-generate-preview",
 				},
 			},
 			"required": []string{"prompt", "image_path"},
@@ -205,6 +213,16 @@ func main() {
 		}
 
 		model := toolArgs.Model
+		prompt := toolArgs.Prompt
+
+		parsedPrompt, detectedModel := parseModelAndPrompt(prompt)
+		if detectedModel != "" {
+			if model == "" {
+				model = detectedModel
+			}
+			prompt = parsedPrompt
+		}
+
 		if model == "" {
 			model = getDefaultModel()
 		}
@@ -227,7 +245,7 @@ func main() {
 			MIMEType:   mimeType,
 		}
 
-		res, err := generateVideoHelper(ctx, client, toolArgs.Prompt, model, img)
+		res, err := generateVideoHelper(ctx, client, prompt, model, img)
 		return formatJSONResult(res, err)
 	})
 
@@ -497,10 +515,85 @@ func formatJSONResult(res any, err error) (*mcp.CallToolResult, any, error) {
 	}, nil, nil
 }
 
+func parseModelAndPrompt(prompt string) (string, string) {
+	lowerPrompt := strings.ToLower(prompt)
+
+	type modelMapping struct {
+		patterns []string
+		model    string
+	}
+
+	mappings := []modelMapping{
+		{
+			patterns: []string{"veo-3.1-lite-generate-preview", "veo-3.1-lite", "veo 3.1 lite", "veo3.1 lite", "veo3.1-lite"},
+			model:    "veo-3.1-lite-generate-preview",
+		},
+		{
+			patterns: []string{"veo-3.1-fast-generate-preview", "veo-3.1-fast", "veo 3.1 fast", "veo3.1 fast", "veo3.1-fast"},
+			model:    "veo-3.1-fast-generate-preview",
+		},
+		{
+			patterns: []string{"veo-3.1-generate-preview", "veo-3.1-standard", "veo-3.1", "veo 3.1 standard", "veo 3.1", "veo3.1 standard", "veo3.1"},
+			model:    "veo-3.1-generate-preview",
+		},
+		{
+			patterns: []string{"veo-2.0-generate-001", "veo-2.0", "veo-2", "veo 2.0", "veo 2", "veo2"},
+			model:    "veo-2.0-generate-001",
+		},
+	}
+
+	for _, mapping := range mappings {
+		for _, pattern := range mapping.patterns {
+			prefixes := []string{
+				"using model " + pattern,
+				"with model " + pattern,
+				"model " + pattern,
+				"using " + pattern,
+				"with " + pattern,
+				"via " + pattern,
+				pattern,
+			}
+			for _, prefix := range prefixes {
+				idx := strings.Index(lowerPrompt, prefix)
+				if idx != -1 {
+					detectedModel := mapping.model
+					start := prompt[:idx]
+					end := prompt[idx+len(prefix):]
+					newPrompt := strings.TrimSpace(start + " " + end)
+					for strings.Contains(newPrompt, "  ") {
+						newPrompt = strings.ReplaceAll(newPrompt, "  ", " ")
+					}
+					newPrompt = strings.Trim(newPrompt, " ,.;")
+					return newPrompt, detectedModel
+				}
+			}
+		}
+	}
+
+	// Fallback to generic pattern detection: "model <any-model>" or "using model <any-model>"
+	words := strings.Fields(prompt)
+	for i, word := range words {
+		lowerWord := strings.ToLower(word)
+		if lowerWord == "model" && i+1 < len(words) {
+			nextWord := words[i+1]
+			cleanModel := strings.Trim(nextWord, " ,.;()'\"")
+			if strings.Contains(cleanModel, "veo-") || strings.Contains(cleanModel, "generate") {
+				var remaining []string
+				remaining = append(remaining, words[:i]...)
+				remaining = append(remaining, words[i+2:]...)
+				newPrompt := strings.Join(remaining, " ")
+				return newPrompt, cleanModel
+			}
+		}
+	}
+
+	return prompt, ""
+}
+
 func getDefaultModel() string {
 	if m := os.Getenv("VEO_DEFAULT_MODEL"); m != "" {
 		return m
 	}
-	return "veo-3.0-generate-preview"
+	return "veo-3.1-fast-generate-preview"
 }
 

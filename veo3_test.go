@@ -128,14 +128,66 @@ func TestGetDefaultModel(t *testing.T) {
 
 	// 1. When environment is unset
 	os.Unsetenv("VEO_DEFAULT_MODEL")
-	if m := getDefaultModel(); m != "veo-3.0-generate-preview" {
-		t.Errorf("expected default model 'veo-3.0-generate-preview', got: '%s'", m)
+	if m := getDefaultModel(); m != "veo-3.1-fast-generate-preview" {
+		t.Errorf("expected default model 'veo-3.1-fast-generate-preview', got: '%s'", m)
 	}
 
 	// 2. When environment is set
 	os.Setenv("VEO_DEFAULT_MODEL", "my-custom-veo-model")
 	if m := getDefaultModel(); m != "my-custom-veo-model" {
 		t.Errorf("expected custom model 'my-custom-veo-model', got: '%s'", m)
+	}
+}
+
+func TestParseModelAndPrompt(t *testing.T) {
+	tests := []struct {
+		name          string
+		inputPrompt   string
+		expectPrompt  string
+		expectModel   string
+	}{
+		{
+			name:         "No model specified",
+			inputPrompt:  "a dog running on the beach",
+			expectPrompt: "a dog running on the beach",
+			expectModel:  "",
+		},
+		{
+			name:         "Exact model 3.1-lite matching",
+			inputPrompt:  "a dog running on the beach using model veo-3.1-lite-generate-preview",
+			expectPrompt: "a dog running on the beach",
+			expectModel:  "veo-3.1-lite-generate-preview",
+		},
+		{
+			name:         "Natural language 3.1 lite",
+			inputPrompt:  "a dog running on the beach with veo 3.1 lite",
+			expectPrompt: "a dog running on the beach",
+			expectModel:  "veo-3.1-lite-generate-preview",
+		},
+		{
+			name:         "Natural language veo 2",
+			inputPrompt:  "veo 2 a majestic sunset over mountains",
+			expectPrompt: "a majestic sunset over mountains",
+			expectModel:  "veo-2.0-generate-001",
+		},
+		{
+			name:         "Override with custom model using generic pattern",
+			inputPrompt:  "sunset over beach model veo-custom-ultra-cool",
+			expectPrompt: "sunset over beach",
+			expectModel:  "veo-custom-ultra-cool",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotPrompt, gotModel := parseModelAndPrompt(tt.inputPrompt)
+			if gotPrompt != tt.expectPrompt {
+				t.Errorf("expected prompt '%s', got '%s'", tt.expectPrompt, gotPrompt)
+			}
+			if gotModel != tt.expectModel {
+				t.Errorf("expected model '%s', got '%s'", tt.expectModel, gotModel)
+			}
+		})
 	}
 }
 
