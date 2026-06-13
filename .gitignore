@@ -9,3 +9,6 @@ veo3-mcp.exe
 .env
 .env.local
 .gemini/backup
+
+# Log file
+*.log
