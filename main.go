@@ -972,6 +972,10 @@ func generateVideoHelper(ctx context.Context, client *genai.Client, model string
 	if config == nil {
 		config = &genai.GenerateVideosConfig{}
 	}
+	// Developer API (genai.BackendGeminiAPI) does not support the generateAudio parameter.
+	// Even if set to false, sending it causes API errors. Always omit it.
+	config.GenerateAudio = nil
+
 	if len(refImages) > 0 {
 		config.ReferenceImages = refImages
 	}
