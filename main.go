@@ -185,7 +185,7 @@ func main() {
 	// --- generate_video ---
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "generate_video",
-		Description: "Generate a video using Google Veo 3 from a text prompt. Veo 3 generates 8-second 720p videos with audio.",
+		Description: "Text-to-Video: Generate a video using Google Veo 3 from a text prompt. Supports reference_images to guide subject/style consistency (does NOT treat images as the first/starting frame of the video).",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -316,7 +316,7 @@ func main() {
 	// --- generate_video_from_image ---
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "generate_video_from_image",
-		Description: "Generate a video using Google Veo 3 from an image and text prompt. Veo 3 generates 8-second 720p videos with audio.",
+		Description: "Image-to-Video: Generate a video from an image and text prompt, where the image is treated as the exact first frame (starter frame) and animates forward. Do NOT use this if you want the image to guide style/subject consistency (use generate_video with reference_images for that).",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -504,7 +504,7 @@ func main() {
 		}
 
 		// Resolve the video source
-		video, err := resolveVideo(toolArgs.VideoURI, toolArgs.VideoPath)
+		video, err := resolveVideo(ctx, client, toolArgs.VideoURI, toolArgs.VideoPath)
 		if err != nil {
 			return formatJSONResult(nil, err)
 		}
@@ -535,7 +535,7 @@ func main() {
 	// --- generate_extended_sequence ---
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "generate_extended_sequence",
-		Description: "Generate a sequence of extended videos from multiple sequential prompts and automatically combine them using ffmpeg if available. Supports per-segment prompts and reference images.",
+		Description: "Generate a sequence of extended videos from multiple sequential prompts. Supports global/per-segment reference_images to guide subject/style consistency (they are NOT used as starting frames). Automatically combines segments using ffmpeg if available.",
 		InputSchema: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -560,16 +560,16 @@ func main() {
 								"items": map[string]any{
 									"type": "object",
 									"properties": map[string]any{
-										"path": map[string]any{
+										"image_path": map[string]any{
 											"type":        "string",
 											"description": "Absolute local path to image",
 										},
-										"type": map[string]any{
+										"reference_type": map[string]any{
 											"type":        "string",
 											"description": "Reference type: 'ASSET' or 'STYLE'",
 										},
 									},
-									"required": []string{"path"},
+									"required": []string{"image_path"},
 								},
 								"description": "Optional list of up to 3 reference images for this specific segment",
 							},
@@ -627,16 +627,16 @@ func main() {
 					"items": map[string]any{
 						"type": "object",
 						"properties": map[string]any{
-							"path": map[string]any{
+							"image_path": map[string]any{
 								"type":        "string",
 								"description": "Absolute local path to image",
 							},
-							"type": map[string]any{
+							"reference_type": map[string]any{
 								"type":        "string",
 								"description": "Reference type: 'ASSET' or 'STYLE'",
 							},
 						},
-						"required": []string{"path"},
+						"required": []string{"image_path"},
 					},
 					"description": "Global reference images to use as fallback for segments that do not have their own reference_images specified.",
 				},
@@ -930,7 +930,7 @@ func resolveReferenceImages(images []ReferenceImageArgs) ([]*genai.VideoGenerati
 	return refImages, nil
 }
 
-func resolveVideo(videoURI, videoPath string) (*genai.Video, error) {
+func resolveVideo(ctx context.Context, client *genai.Client, videoURI, videoPath string) (*genai.Video, error) {
 	if videoURI != "" {
 		return &genai.Video{
 			URI: videoURI,
@@ -944,10 +944,7 @@ func resolveVideo(videoURI, videoPath string) (*genai.Video, error) {
 		if _, err := os.Stat(resolved); os.IsNotExist(err) {
 			return nil, fmt.Errorf("extension video file not found: %s", resolved)
 		}
-		data, err := os.ReadFile(resolved)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read video file %s: %w", resolved, err)
-		}
+
 		mimeType := "video/mp4"
 		ext := strings.ToLower(filepath.Ext(resolved))
 		if ext == ".mov" {
@@ -957,9 +954,32 @@ func resolveVideo(videoURI, videoPath string) (*genai.Video, error) {
 		} else if ext == ".webm" {
 			mimeType = "video/webm"
 		}
+
+		fmt.Fprintf(os.Stderr, "Uploading video file to Gemini Files API: %s (%s)...\n", resolved, mimeType)
+		file, err := client.Files.UploadFromPath(ctx, resolved, &genai.UploadFileConfig{MIMEType: mimeType})
+		if err != nil {
+			return nil, fmt.Errorf("failed to upload video to Gemini Files API: %w", err)
+		}
+
+		// Wait for file to be processed if state is PROCESSING
+		for file.State == genai.FileStateProcessing {
+			fmt.Fprintf(os.Stderr, "File is processing, waiting 2 seconds...\n")
+			time.Sleep(2 * time.Second)
+			file, err = client.Files.Get(ctx, file.Name, nil)
+			if err != nil {
+				return nil, fmt.Errorf("failed to check file processing status: %w", err)
+			}
+		}
+
+		if file.State == genai.FileStateFailed {
+			return nil, fmt.Errorf("uploaded file state is FAILED: %v", file.Error)
+		}
+
+		fmt.Fprintf(os.Stderr, "Successfully uploaded video file. URI: %s\n", file.URI)
+
 		return &genai.Video{
-			VideoBytes: data,
-			MIMEType:   mimeType,
+			URI:      file.URI,
+			MIMEType: mimeType,
 		}, nil
 	}
 	return nil, nil

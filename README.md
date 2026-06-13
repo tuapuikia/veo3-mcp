@@ -88,7 +88,11 @@ Animate a starting image with natural motion.
 > [!NOTE]
 > **Starter Image vs Reference Image**:
 > - **Starter Image** (`generate_video_from_image`): The image becomes the **exact starting frame** of the video, which then animates forward.
-> - **Reference Image** (`generate_video` with `reference_images`): The image acts as an **influence/ingredient** (like subject face or color scheme). The video does not start on this frame, but uses its subject or style. When using `ASSET` reference images, the prompt **must explicitly describe** the subject (e.g., *"A cinematic video of the man from the reference image..."*) so Veo knows to match the face/identity.
+>   - *Prompting Guideline*: Say `"starting with image"` or `"animate this starting frame"`.
+>   - *Example*: `"A puppy runs across the lawn starting with image /path/to/pup.jpg"`
+> - **Reference Image** (`generate_video` with `reference_images`): The image acts as an **influence/ingredient** (replicating character face, identity, or aesthetic style) but is NOT the starting frame.
+>   - *Prompting Guideline*: Say `"using reference image"` or `"in the style of reference image"`.
+>   - *Example*: `"A cinematic video of the puppy sleeping on a rug using reference image /path/to/pup.jpg"` (The prompt **must explicitly describe** the subject, e.g. "puppy", so Veo knows to apply the reference face/identity).
 
 ### 3. `extend_video`
 Extend an existing Veo-generated video by **7 seconds** per extension.

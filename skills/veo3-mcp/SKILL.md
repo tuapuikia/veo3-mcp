@@ -76,7 +76,26 @@ Veo 3.1 supports up to 3 reference images to guide generation. There are two maj
 - **Storage**:
   - `VEO3_OUTPUT_DIR`: Overrides the default `./veo-output` storage directory.
 
+## How to Invoke MCP Tools
+- **Lazy MCP Loading**: `veo3-mcp` is a lazily-loaded MCP server. Do NOT attempt to run raw commands, look up system paths, or create custom python wrappers.
+- **Invocation Mandate**: You MUST invoke these tools using the `call_mcp_tool` tool with:
+  - `ServerName`: `"veo3-mcp"`
+  - `ToolName`: Exact tool name (e.g., `"generate_video"`, `"generate_extended_sequence"`)
+  - `Arguments`: Parameters conforming to the tool's schema.
+
+### Example Tool Call
+```json
+{
+  "ServerName": "veo3-mcp",
+  "ToolName": "generate_video",
+  "Arguments": {
+    "prompt": "Cinematic shot of a golden retriever playing in autumn leaves."
+  }
+}
+```
+
 ## When to use this skill
 - Requests to make, generate, synthesize, extend, or animate videos or movies.
 - Interacting with Google Veo 3 or Veo 2 models.
 - Reviewing or retrieving local video generation assets.
+
