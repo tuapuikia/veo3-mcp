@@ -3,8 +3,10 @@ BUILD_FLAGS = -trimpath -buildvcs=false -ldflags="-buildid="
 # Reference Go version for reproducible builds: 1.26.2
 GO_VERSION = 1.26.2
 
-.PHONY: build run-stdio run-sse docker-build test clean checksum verify docker-reproducible-build \
+.PHONY: all build run-stdio run-sse docker-build test clean checksum verify docker-reproducible-build \
 	build-windows build-darwin build-darwin-amd64 build-darwin-arm64 build-linux build-linux-amd64 build-linux-arm64 build-all
+
+all: docker-reproducible-build build
 
 build:
 	@echo "Building glibc binary locally (Ubuntu/Debian compatible)..."

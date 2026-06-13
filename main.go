@@ -56,7 +56,9 @@ type VideoInfoResponse struct {
 // ReferenceImageArgs matches input parameters for reference images
 type ReferenceImageArgs struct {
 	ImagePath     string `json:"image_path"`
+	PathAlias     string `json:"path,omitempty"`
 	ReferenceType string `json:"reference_type,omitempty"`
+	TypeAlias     string `json:"type,omitempty"`
 }
 
 // Args structures for tool inputs
@@ -877,7 +879,11 @@ func ValidateAuthentication(cliKey string) (string, error) {
 func resolveReferenceImages(images []ReferenceImageArgs) ([]*genai.VideoGenerationReferenceImage, error) {
 	var refImages []*genai.VideoGenerationReferenceImage
 	for _, imgArg := range images {
-		path := strings.TrimSpace(imgArg.ImagePath)
+		path := imgArg.ImagePath
+		if path == "" {
+			path = imgArg.PathAlias
+		}
+		path = strings.TrimSpace(path)
 		if path == "" {
 			return nil, fmt.Errorf("reference image path cannot be empty")
 		}
@@ -900,8 +906,12 @@ func resolveReferenceImages(images []ReferenceImageArgs) ([]*genai.VideoGenerati
 			mimeType = "image/webp"
 		}
 
+		refTypeStr := imgArg.ReferenceType
+		if refTypeStr == "" {
+			refTypeStr = imgArg.TypeAlias
+		}
 		refType := genai.VideoGenerationReferenceTypeAsset
-		if strings.ToUpper(imgArg.ReferenceType) == "STYLE" {
+		if strings.ToUpper(refTypeStr) == "STYLE" {
 			refType = genai.VideoGenerationReferenceTypeStyle
 		}
 
