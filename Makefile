@@ -14,35 +14,38 @@ build:
 	@echo "Binary SHA256:"
 	@sha256sum $(BINARY_NAME) || shasum -a 256 $(BINARY_NAME)
 
-build-windows:
+dist-dir:
+	@mkdir -p dist
+
+build-windows: dist-dir
 	@echo "Building for Windows (amd64)..."
-	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_FLAGS) -o $(BINARY_NAME)-windows-amd64.exe .
+	CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build $(BUILD_FLAGS) -o dist/$(BINARY_NAME)-windows-amd64.exe .
 
 build-darwin: build-darwin-amd64 build-darwin-arm64
 
-build-darwin-amd64:
+build-darwin-amd64: dist-dir
 	@echo "Building for macOS (amd64)..."
-	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(BUILD_FLAGS) -o $(BINARY_NAME)-darwin-amd64 .
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build $(BUILD_FLAGS) -o dist/$(BINARY_NAME)-darwin-amd64 .
 
-build-darwin-arm64:
+build-darwin-arm64: dist-dir
 	@echo "Building for macOS (arm64)..."
-	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(BUILD_FLAGS) -o $(BINARY_NAME)-darwin-arm64 .
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build $(BUILD_FLAGS) -o dist/$(BINARY_NAME)-darwin-arm64 .
 
 build-linux: build-linux-amd64 build-linux-arm64
 
-build-linux-amd64:
+build-linux-amd64: dist-dir
 	@echo "Building for Linux (amd64 glibc)..."
-	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GOEXPERIMENT=boringcrypto go build $(BUILD_FLAGS) -o $(BINARY_NAME)-linux-amd64 .
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GOEXPERIMENT=boringcrypto go build $(BUILD_FLAGS) -o dist/$(BINARY_NAME)-linux-amd64 .
 
-build-linux-musl:
+build-linux-musl: dist-dir
 	@echo "Building for Linux (amd64 musl)..."
-	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GOEXPERIMENT=boringcrypto go build $(BUILD_FLAGS) -o $(BINARY_NAME)-linux-amd64-musl .
+	CGO_ENABLED=1 GOOS=linux GOARCH=amd64 GOEXPERIMENT=boringcrypto go build $(BUILD_FLAGS) -o dist/$(BINARY_NAME)-linux-amd64-musl .
 
-build-linux-arm64:
+build-linux-arm64: dist-dir
 	@echo "Building for Linux (arm64 glibc)..."
-	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 GOEXPERIMENT=boringcrypto go build $(BUILD_FLAGS) -o $(BINARY_NAME)-linux-arm64 .
+	CGO_ENABLED=1 GOOS=linux GOARCH=arm64 GOEXPERIMENT=boringcrypto go build $(BUILD_FLAGS) -o dist/$(BINARY_NAME)-linux-arm64 .
 
-build-all: build-windows build-darwin build-linux build-linux-musl
+build-all: docker-reproducible-build
 
 docker-reproducible-build:
 	@echo "Building all binaries inside Docker (Go $(GO_VERSION))..."

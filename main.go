@@ -497,10 +497,10 @@ func main() {
 			model = getDefaultModel()
 		}
 
-		// Resolve reference images if any
-		refImages, err := resolveReferenceImages(toolArgs.ReferenceImages)
-		if err != nil {
-			return formatJSONResult(nil, err)
+		// Reference images are not supported for video extensions in Google GenAI API
+		var refImages []*genai.VideoGenerationReferenceImage
+		if len(toolArgs.ReferenceImages) > 0 {
+			fmt.Fprintf(os.Stderr, "Warning: Reference images are not supported for video extensions. Skipping reference images.\n")
 		}
 
 		// Resolve the video source
@@ -702,13 +702,17 @@ func main() {
 
 			// Resolve reference images for this segment (fallback to global if segment specific ones are empty)
 			var segmentRefImages []*genai.VideoGenerationReferenceImage
-			if len(seg.ReferenceImages) > 0 {
-				segmentRefImages, err = resolveReferenceImages(seg.ReferenceImages)
-				if err != nil {
-					return formatJSONResult(nil, err)
+			if i == 0 {
+				if len(seg.ReferenceImages) > 0 {
+					segmentRefImages, err = resolveReferenceImages(seg.ReferenceImages)
+					if err != nil {
+						return formatJSONResult(nil, err)
+					}
+				} else {
+					segmentRefImages = globalRefImages
 				}
-			} else {
-				segmentRefImages = globalRefImages
+			} else if len(seg.ReferenceImages) > 0 || len(toolArgs.ReferenceImages) > 0 {
+				fmt.Fprintf(os.Stderr, "Warning: Reference images are not supported for extended segments (Segment %d+). Skipping reference images for this segment.\n", i+1)
 			}
 
 			var source *genai.GenerateVideosSource

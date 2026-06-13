@@ -55,12 +55,12 @@ Veo 3.1 supports up to 3 reference images to guide generation. There are two maj
 
 ### Sequential Generation and Combining (`generate_extended_sequence`)
 - **What it does**: Takes either simple `prompts` (strings) or advanced `segments` (objects with individual prompts and reference images). Generates the base segment, then sequentially extends the previous segment's API URI for each subsequent segment.
-- **Per-Segment Reference Images**: You can specify different reference images for different scenes in the sequence! For example, Segment 1 can use a Cat reference photo, Segment 2 can use Dog/Man reference photos, and Segment 3 can use a Man2 reference photo. Up to 3 reference images can be used per segment.
-- **Combining**: If `ffmpeg` is present on the host system, the tool uses the lossless `concat` demuxer to merge all segments into a single cohesive video file (`veo3_combined_<timestamp>.mp4`). If `ffmpeg` is missing, it skips merging but returns all individual files safely.
+- **Per-Segment Reference Images**: Reference images are only supported for the very first segment (the base generation, Segment 1). Subsequent segments (Segment 2+) are generated using video extension, which does not support reference images.
 - **Example structure**:
-  - `segments[0]`: prompt: `"A cat <cat image> walking down the street."`
-  - `segments[1]`: prompt: `"A dog <dog image> and a man <man image> watch the cat walking."`
-  - `segments[2]`: prompt: `"The man <man2 image> is shocked."`
+  - `segments[0]`: prompt: `"A cat walking down the street."` (Can use reference images to define the cat's style/identity)
+  - `segments[1]`: prompt: `"The cat starts chasing a red ball."` (Video extension: cannot use reference images, continue the action with text prompt)
+  - `segments[2]`: prompt: `"A dog barks at the cat."` (Video extension: cannot use reference images)
+- **Combining**: If `ffmpeg` is present on the host system, the tool uses the lossless `concat` demuxer to merge all segments into a single cohesive video file (`veo3_combined_<timestamp>.mp4`). If `ffmpeg` is missing, it skips merging but returns all individual files safely.
 
 ## Configuration & Environment Fallbacks
 - **API Authentication**:
