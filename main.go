@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -61,20 +62,49 @@ type ReferenceImageArgs struct {
 	TypeAlias     string `json:"type,omitempty"`
 }
 
+// UnmarshalJSON implements custom JSON unmarshaling to handle string, integer, or object input.
+func (r *ReferenceImageArgs) UnmarshalJSON(data []byte) error {
+	// 1. Try parsing as a string (image path)
+	var path string
+	if err := json.Unmarshal(data, &path); err == nil {
+		r.ImagePath = path
+		r.ReferenceType = "ASSET"
+		return nil
+	}
+
+	// 2. Try parsing as an integer (platform asset ID)
+	var id int64
+	if err := json.Unmarshal(data, &id); err == nil {
+		r.ImagePath = fmt.Sprintf("%d", id)
+		r.ReferenceType = "ASSET"
+		return nil
+	}
+
+	// 3. Parse as a standard object
+	type Alias ReferenceImageArgs
+	var aux Alias
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	*r = ReferenceImageArgs(aux)
+	return nil
+}
+
 // Args structures for tool inputs
 type GenerateVideoArgs struct {
-	Prompt           string               `json:"prompt"`
-	Model            string               `json:"model,omitempty"`
-	AspectRatio      string               `json:"aspect_ratio,omitempty"`
-	Resolution       string               `json:"resolution,omitempty"`
-	DurationSeconds  *int32               `json:"duration_seconds,omitempty"`
-	FPS              *int32               `json:"fps,omitempty"`
-	NegativePrompt   string               `json:"negative_prompt,omitempty"`
-	EnhancePrompt    *bool                `json:"enhance_prompt,omitempty"`
-	GenerateAudio    *bool                `json:"generate_audio,omitempty"`
-	Seed             *int32               `json:"seed,omitempty"`
-	PersonGeneration string               `json:"person_generation,omitempty"`
-	ReferenceImages  []ReferenceImageArgs `json:"reference_images,omitempty"`
+	Prompt              string               `json:"prompt"`
+	Model               string               `json:"model,omitempty"`
+	AspectRatio         string               `json:"aspect_ratio,omitempty"`
+	Resolution          string               `json:"resolution,omitempty"`
+	DurationSeconds     *int32               `json:"duration_seconds,omitempty"`
+	FPS                 *int32               `json:"fps,omitempty"`
+	NegativePrompt      string               `json:"negative_prompt,omitempty"`
+	EnhancePrompt       *bool                `json:"enhance_prompt,omitempty"`
+	GenerateAudio       *bool                `json:"generate_audio,omitempty"`
+	Seed                *int32               `json:"seed,omitempty"`
+	PersonGeneration    string               `json:"person_generation,omitempty"`
+	ReferenceImages     []ReferenceImageArgs `json:"reference_images,omitempty"`
+	ReferenceImagesJSON string               `json:"reference_images_json,omitempty"`
 }
 
 type GenerateVideoFromImageArgs struct {
@@ -106,19 +136,21 @@ type SegmentArgs struct {
 }
 
 type GenerateExtendedSequenceArgs struct {
-	Prompts          []string             `json:"prompts,omitempty"`
-	Segments         []SegmentArgs        `json:"segments,omitempty"`
-	Model            string               `json:"model,omitempty"`
-	AspectRatio      string               `json:"aspect_ratio,omitempty"`
-	Resolution       string               `json:"resolution,omitempty"`
-	DurationSeconds  *int32               `json:"duration_seconds,omitempty"`
-	FPS              *int32               `json:"fps,omitempty"`
-	NegativePrompt   string               `json:"negative_prompt,omitempty"`
-	EnhancePrompt    *bool                `json:"enhance_prompt,omitempty"`
-	GenerateAudio    *bool                `json:"generate_audio,omitempty"`
-	Seed             *int32               `json:"seed,omitempty"`
-	PersonGeneration string               `json:"person_generation,omitempty"`
-	ReferenceImages  []ReferenceImageArgs `json:"reference_images,omitempty"`
+	Prompts             []string             `json:"prompts,omitempty"`
+	Segments            []SegmentArgs        `json:"segments,omitempty"`
+	SegmentsJSON        string               `json:"segments_json,omitempty"`
+	Model               string               `json:"model,omitempty"`
+	AspectRatio         string               `json:"aspect_ratio,omitempty"`
+	Resolution          string               `json:"resolution,omitempty"`
+	DurationSeconds     *int32               `json:"duration_seconds,omitempty"`
+	FPS                 *int32               `json:"fps,omitempty"`
+	NegativePrompt      string               `json:"negative_prompt,omitempty"`
+	EnhancePrompt       *bool                `json:"enhance_prompt,omitempty"`
+	GenerateAudio       *bool                `json:"generate_audio,omitempty"`
+	Seed                *int32               `json:"seed,omitempty"`
+	PersonGeneration    string               `json:"person_generation,omitempty"`
+	ReferenceImages     []ReferenceImageArgs `json:"reference_images,omitempty"`
+	ReferenceImagesJSON string               `json:"reference_images_json,omitempty"`
 }
 
 type ExtendedSequenceResponse struct {
@@ -151,6 +183,9 @@ func main() {
 		outputDir = "./veo-output"
 	}
 	outputDir = filepath.Clean(outputDir)
+	if abs, err := filepath.Abs(outputDir); err == nil {
+		outputDir = abs
+	}
 
 	// Ensure output directory exists
 	if err := os.MkdirAll(outputDir, 0755); err != nil {
@@ -241,20 +276,36 @@ func main() {
 					"type":        "array",
 					"description": "Up to 3 reference images to preserve subject/style appearance (Veo 3.1 only)",
 					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"image_path": map[string]any{
-								"type":        "string",
-								"description": "Path to the local reference image file",
+						"anyOf": []map[string]any{
+							{
+								"type": "object",
+								"properties": map[string]any{
+									"image_path": map[string]any{
+										"type":        "string",
+										"description": "Path to the local reference image file",
+									},
+									"reference_type": map[string]any{
+										"type":        "string",
+										"description": "Reference type: 'ASSET' (guides subject/person details) or 'STYLE' (guides theme/colors)",
+										"enum":        []string{"ASSET", "STYLE"},
+									},
+								},
+								"required": []string{"image_path"},
 							},
-							"reference_type": map[string]any{
-								"type":        "string",
-								"description": "Reference type: 'ASSET' (guides subject/person details) or 'STYLE' (guides theme/colors)",
-								"enum":        []string{"ASSET", "STYLE"},
+							{
+								"type": "string",
+								"description": "Local path or remote URL to the reference image file",
+							},
+							{
+								"type": "integer",
+								"description": "Asset/resource ID of the reference image",
 							},
 						},
-						"required": []string{"image_path"},
 					},
+				},
+				"reference_images_json": map[string]any{
+					"type":        "string",
+					"description": "Fallback JSON string for reference_images to bypass CLI array serialization bugs.",
 				},
 			},
 			"required": []string{"prompt"},
@@ -300,6 +351,12 @@ func main() {
 		}
 
 		// Resolve Reference Images
+		if len(toolArgs.ReferenceImages) == 0 && toolArgs.ReferenceImagesJSON != "" {
+			var parsedRefs []ReferenceImageArgs
+			if err := json.Unmarshal([]byte(toolArgs.ReferenceImagesJSON), &parsedRefs); err == nil {
+				toolArgs.ReferenceImages = parsedRefs
+			}
+		}
 		refImages, err := resolveReferenceImages(toolArgs.ReferenceImages)
 		if err != nil {
 			return formatJSONResult(nil, err)
@@ -558,18 +615,30 @@ func main() {
 							"reference_images": map[string]any{
 								"type": "array",
 								"items": map[string]any{
-									"type": "object",
-									"properties": map[string]any{
-										"image_path": map[string]any{
-											"type":        "string",
-											"description": "Absolute local path to image",
+									"anyOf": []map[string]any{
+										{
+											"type": "object",
+											"properties": map[string]any{
+												"image_path": map[string]any{
+													"type":        "string",
+													"description": "Absolute local path to image",
+												},
+												"reference_type": map[string]any{
+													"type":        "string",
+													"description": "Reference type: 'ASSET' or 'STYLE'",
+												},
+											},
+											"required": []string{"image_path"},
 										},
-										"reference_type": map[string]any{
-											"type":        "string",
-											"description": "Reference type: 'ASSET' or 'STYLE'",
+										{
+											"type": "string",
+											"description": "Local path or remote URL to the reference image file",
+										},
+										{
+											"type": "integer",
+											"description": "Asset/resource ID of the reference image",
 										},
 									},
-									"required": []string{"image_path"},
 								},
 								"description": "Optional list of up to 3 reference images for this specific segment",
 							},
@@ -577,6 +646,10 @@ func main() {
 						"required": []string{"prompt"},
 					},
 					"description": "Advanced mode: List of sequential segments, each with its own prompt and optional reference images.",
+				},
+				"segments_json": map[string]any{
+					"type":        "string",
+					"description": "Fallback JSON string for segments to bypass CLI array serialization bugs.",
 				},
 				"model": map[string]any{
 					"type":        "string",
@@ -625,20 +698,36 @@ func main() {
 				"reference_images": map[string]any{
 					"type": "array",
 					"items": map[string]any{
-						"type": "object",
-						"properties": map[string]any{
-							"image_path": map[string]any{
-								"type":        "string",
-								"description": "Absolute local path to image",
+						"anyOf": []map[string]any{
+							{
+								"type": "object",
+								"properties": map[string]any{
+									"image_path": map[string]any{
+										"type":        "string",
+										"description": "Absolute local path to image",
+									},
+									"reference_type": map[string]any{
+										"type":        "string",
+										"description": "Reference type: 'ASSET' or 'STYLE'",
+									},
+								},
+								"required": []string{"image_path"},
 							},
-							"reference_type": map[string]any{
-								"type":        "string",
-								"description": "Reference type: 'ASSET' or 'STYLE'",
+							{
+								"type": "string",
+								"description": "Local path or remote URL to the reference image file",
+							},
+							{
+								"type": "integer",
+								"description": "Asset/resource ID of the reference image",
 							},
 						},
-						"required": []string{"image_path"},
 					},
 					"description": "Global reference images to use as fallback for segments that do not have their own reference_images specified.",
+				},
+				"reference_images_json": map[string]any{
+					"type":        "string",
+					"description": "Fallback JSON string for reference_images to bypass CLI array serialization bugs.",
 				},
 			},
 		},
@@ -646,6 +735,19 @@ func main() {
 		var toolArgs GenerateExtendedSequenceArgs
 		if err := json.Unmarshal(args, &toolArgs); err != nil {
 			return nil, nil, err
+		}
+
+		if len(toolArgs.Segments) == 0 && toolArgs.SegmentsJSON != "" {
+			var parsed []SegmentArgs
+			if err := json.Unmarshal([]byte(toolArgs.SegmentsJSON), &parsed); err == nil {
+				toolArgs.Segments = parsed
+			}
+		}
+		if len(toolArgs.ReferenceImages) == 0 && toolArgs.ReferenceImagesJSON != "" {
+			var parsed []ReferenceImageArgs
+			if err := json.Unmarshal([]byte(toolArgs.ReferenceImagesJSON), &parsed); err == nil {
+				toolArgs.ReferenceImages = parsed
+			}
 		}
 
 		var runSegments []SegmentArgs
@@ -734,8 +836,27 @@ func main() {
 
 			fmt.Fprintf(os.Stderr, "Generating segment %d/%d: %s\n", i+1, len(runSegments), promptStr)
 			res, err := generateVideoHelper(ctx, client, model, source, config, segmentRefImages)
+			if err != nil && i > 0 {
+				fmt.Fprintf(os.Stderr, "Warning: video extension failed (%v). Falling back to standalone video generation for segment %d.\n", err, i+1)
+				// Fall back to standalone generation
+				standaloneSource := &genai.GenerateVideosSource{
+					Prompt: promptStr,
+				}
+				// For fallback, use the segment's reference images if provided, or fallback to global fallback reference images
+				var fallbackRefImages []*genai.VideoGenerationReferenceImage
+				if len(seg.ReferenceImages) > 0 {
+					fallbackRefImages, err = resolveReferenceImages(seg.ReferenceImages)
+					if err != nil {
+						return formatJSONResult(nil, err)
+					}
+				} else {
+					fallbackRefImages = globalRefImages
+				}
+				res, err = generateVideoHelper(ctx, client, model, standaloneSource, config, fallbackRefImages)
+			}
+
 			if err != nil {
-				// If an extension fails, we return what we generated so far with the error details
+				// If generation still fails (or first segment failed), return error
 				return formatJSONResult(&ExtendedSequenceResponse{
 					Segments:        segments,
 					CombinedSuccess: false,
@@ -880,6 +1001,41 @@ func ValidateAuthentication(cliKey string) (string, error) {
 	return "", fmt.Errorf("ERROR: No valid API key found. Please set GEMINI_API_KEY, GEMINI_CLI_APP, or other API key environment variable")
 }
 
+func findFileInSystem(basename string) string {
+	searchDirs := []string{
+		".",
+	}
+	for _, dir := range searchDirs {
+		var found string
+		_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if !info.IsDir() && info.Name() == basename {
+				found = path
+				return filepath.SkipAll
+			}
+			return nil
+		})
+		if found != "" {
+			return found
+		}
+	}
+	return ""
+}
+
+func downloadImage(url string) ([]byte, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to download image from %s, status code: %d", url, resp.StatusCode)
+	}
+	return io.ReadAll(resp.Body)
+}
+
 func resolveReferenceImages(images []ReferenceImageArgs) ([]*genai.VideoGenerationReferenceImage, error) {
 	var refImages []*genai.VideoGenerationReferenceImage
 	for _, imgArg := range images {
@@ -891,23 +1047,52 @@ func resolveReferenceImages(images []ReferenceImageArgs) ([]*genai.VideoGenerati
 		if path == "" {
 			return nil, fmt.Errorf("reference image path cannot be empty")
 		}
-		resolved, err := resolveSafePath(path)
-		if err != nil {
-			return nil, err
-		}
-		if _, err := os.Stat(resolved); os.IsNotExist(err) {
-			return nil, fmt.Errorf("reference image not found: %s", resolved)
-		}
-		data, err := os.ReadFile(resolved)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read reference image %s: %w", resolved, err)
-		}
-		mimeType := "image/jpeg"
-		ext := strings.ToLower(filepath.Ext(resolved))
-		if ext == ".png" {
-			mimeType = "image/png"
-		} else if ext == ".webp" {
-			mimeType = "image/webp"
+
+		var data []byte
+		var mimeType string
+		var ext string
+
+		if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
+			fmt.Fprintf(os.Stderr, "Downloading remote reference image: %s...\n", path)
+			var err error
+			data, err = downloadImage(path)
+			if err != nil {
+				return nil, fmt.Errorf("failed to download remote reference image %s: %w", path, err)
+			}
+			mimeType = "image/jpeg"
+			if strings.Contains(strings.ToLower(path), ".png") {
+				mimeType = "image/png"
+			} else if strings.Contains(strings.ToLower(path), ".webp") {
+				mimeType = "image/webp"
+			}
+		} else {
+			resolved, err := resolveSafePath(path)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := os.Stat(resolved); os.IsNotExist(err) {
+				// Try finding file by its basename
+				basename := filepath.Base(path)
+				fmt.Fprintf(os.Stderr, "Reference image not found at %s. Searching for %s in system...\n", resolved, basename)
+				foundPath := findFileInSystem(basename)
+				if foundPath != "" {
+					fmt.Fprintf(os.Stderr, "✓ Found reference image at: %s\n", foundPath)
+					resolved = foundPath
+				} else {
+					return nil, fmt.Errorf("reference image not found: %s", resolved)
+				}
+			}
+			data, err = os.ReadFile(resolved)
+			if err != nil {
+				return nil, fmt.Errorf("failed to read reference image %s: %w", resolved, err)
+			}
+			ext = strings.ToLower(filepath.Ext(resolved))
+			mimeType = "image/jpeg"
+			if ext == ".png" {
+				mimeType = "image/png"
+			} else if ext == ".webp" {
+				mimeType = "image/webp"
+			}
 		}
 
 		refTypeStr := imgArg.ReferenceType
@@ -992,9 +1177,10 @@ func generateVideoHelper(ctx context.Context, client *genai.Client, model string
 	if config == nil {
 		config = &genai.GenerateVideosConfig{}
 	}
-	// Developer API (genai.BackendGeminiAPI) does not support the generateAudio parameter.
-	// Even if set to false, sending it causes API errors. Always omit it.
+	// Developer API (genai.BackendGeminiAPI) does not support the generateAudio or FPS parameters.
+	// Even if set to false, sending it causes API errors. Always omit them.
 	config.GenerateAudio = nil
+	config.FPS = nil
 
 	if len(refImages) > 0 {
 		config.ReferenceImages = refImages
@@ -1252,9 +1438,14 @@ func combineVideosFFmpeg(paths []string) (string, error) {
 	defer os.Remove(tmpFile.Name())
 
 	for _, path := range paths {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			tmpFile.Close()
+			return "", fmt.Errorf("failed to get absolute path for %s: %w", path, err)
+		}
 		// Escape single quotes for ffmpeg
-		escapedPath := strings.ReplaceAll(path, "'", "'\\''")
-		_, err := fmt.Fprintf(tmpFile, "file '%s'\n", escapedPath)
+		escapedPath := strings.ReplaceAll(absPath, "'", "'\\''")
+		_, err = fmt.Fprintf(tmpFile, "file '%s'\n", escapedPath)
 		if err != nil {
 			tmpFile.Close()
 			return "", fmt.Errorf("failed to write to temp file: %w", err)
@@ -1262,10 +1453,16 @@ func combineVideosFFmpeg(paths []string) (string, error) {
 	}
 	tmpFile.Close()
 
-	// Generate a unique output file name in outputDir
+	// Generate a unique output file name in the same directory as the segments
+	targetDir := outputDir
+	if len(paths) > 0 {
+		if dir, err := filepath.Abs(filepath.Dir(paths[0])); err == nil {
+			targetDir = dir
+		}
+	}
 	timestamp := time.Now().Format("20060102_150405")
 	outputFilename := fmt.Sprintf("veo3_combined_%s.mp4", timestamp)
-	outputPath := filepath.Join(outputDir, outputFilename)
+	outputPath := filepath.Join(targetDir, outputFilename)
 
 	// Run ffmpeg
 	cmd := exec.Command(ffmpegPath, "-y", "-f", "concat", "-safe", "0", "-i", tmpFile.Name(), "-c", "copy", outputPath)
