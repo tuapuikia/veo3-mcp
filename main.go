@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -26,6 +27,7 @@ type VideoGenerationResponse struct {
 	GenerationTime float64  `json:"generation_time"`
 	FileSize       int64    `json:"file_size"`
 	AspectRatio    string   `json:"aspect_ratio"`
+	VideoURI       string   `json:"video_uri,omitempty"`
 }
 
 type VideoFileInfo struct {
@@ -51,16 +53,77 @@ type VideoInfoResponse struct {
 	Modified string `json:"modified"`
 }
 
+// ReferenceImageArgs matches input parameters for reference images
+type ReferenceImageArgs struct {
+	ImagePath     string `json:"image_path"`
+	ReferenceType string `json:"reference_type,omitempty"`
+}
+
 // Args structures for tool inputs
 type GenerateVideoArgs struct {
-	Prompt string `json:"prompt"`
-	Model  string `json:"model,omitempty"`
+	Prompt           string               `json:"prompt"`
+	Model            string               `json:"model,omitempty"`
+	AspectRatio      string               `json:"aspect_ratio,omitempty"`
+	Resolution       string               `json:"resolution,omitempty"`
+	DurationSeconds  *int32               `json:"duration_seconds,omitempty"`
+	FPS              *int32               `json:"fps,omitempty"`
+	NegativePrompt   string               `json:"negative_prompt,omitempty"`
+	EnhancePrompt    *bool                `json:"enhance_prompt,omitempty"`
+	GenerateAudio    *bool                `json:"generate_audio,omitempty"`
+	Seed             *int32               `json:"seed,omitempty"`
+	PersonGeneration string               `json:"person_generation,omitempty"`
+	ReferenceImages  []ReferenceImageArgs `json:"reference_images,omitempty"`
 }
 
 type GenerateVideoFromImageArgs struct {
 	Prompt    string `json:"prompt"`
 	ImagePath string `json:"image_path"`
 	Model     string `json:"model,omitempty"`
+}
+
+type ExtendVideoArgs struct {
+	Prompt           string               `json:"prompt"`
+	VideoURI         string               `json:"video_uri,omitempty"`
+	VideoPath        string               `json:"video_path,omitempty"`
+	Model            string               `json:"model,omitempty"`
+	AspectRatio      string               `json:"aspect_ratio,omitempty"`
+	Resolution       string               `json:"resolution,omitempty"`
+	DurationSeconds  *int32               `json:"duration_seconds,omitempty"`
+	FPS              *int32               `json:"fps,omitempty"`
+	NegativePrompt   string               `json:"negative_prompt,omitempty"`
+	EnhancePrompt    *bool                `json:"enhance_prompt,omitempty"`
+	GenerateAudio    *bool                `json:"generate_audio,omitempty"`
+	Seed             *int32               `json:"seed,omitempty"`
+	PersonGeneration string               `json:"person_generation,omitempty"`
+	ReferenceImages  []ReferenceImageArgs `json:"reference_images,omitempty"`
+}
+
+type SegmentArgs struct {
+	Prompt          string               `json:"prompt"`
+	ReferenceImages []ReferenceImageArgs `json:"reference_images,omitempty"`
+}
+
+type GenerateExtendedSequenceArgs struct {
+	Prompts          []string             `json:"prompts,omitempty"`
+	Segments         []SegmentArgs        `json:"segments,omitempty"`
+	Model            string               `json:"model,omitempty"`
+	AspectRatio      string               `json:"aspect_ratio,omitempty"`
+	Resolution       string               `json:"resolution,omitempty"`
+	DurationSeconds  *int32               `json:"duration_seconds,omitempty"`
+	FPS              *int32               `json:"fps,omitempty"`
+	NegativePrompt   string               `json:"negative_prompt,omitempty"`
+	EnhancePrompt    *bool                `json:"enhance_prompt,omitempty"`
+	GenerateAudio    *bool                `json:"generate_audio,omitempty"`
+	Seed             *int32               `json:"seed,omitempty"`
+	PersonGeneration string               `json:"person_generation,omitempty"`
+	ReferenceImages  []ReferenceImageArgs `json:"reference_images,omitempty"`
+}
+
+type ExtendedSequenceResponse struct {
+	CombinedVideoPath string                     `json:"combined_video_path,omitempty"`
+	Segments          []VideoGenerationResponse `json:"segments"`
+	CombinedSuccess   bool                       `json:"combined_success"`
+	CombinedMessage   string                     `json:"combined_message"`
 }
 
 type GetVideoInfoArgs struct {
@@ -114,7 +177,7 @@ func main() {
 	// 4. Initialize MCP Server
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "MCP Veo 3 Video Generator",
-		Version: "1.0.0",
+		Version: "1.1.0",
 	}, nil)
 
 	// --- generate_video ---
@@ -132,6 +195,64 @@ func main() {
 					"type":        "string",
 					"description": "Veo model to use (defaults to veo-3.1-fast-generate-preview; other valid models: veo-3.1-generate-preview, veo-3.1-lite-generate-preview, veo-2.0-generate-001; arbitrary custom models are also accepted)",
 					"default":     "veo-3.1-fast-generate-preview",
+				},
+				"aspect_ratio": map[string]any{
+					"type":        "string",
+					"description": "Aspect ratio for the generated video: '16:9' (landscape) or '9:16' (portrait)",
+					"enum":        []string{"16:9", "9:16"},
+				},
+				"resolution": map[string]any{
+					"type":        "string",
+					"description": "Resolution: '720p' or '1080p'",
+					"enum":        []string{"720p", "1080p"},
+				},
+				"duration_seconds": map[string]any{
+					"type":        "integer",
+					"description": "Duration of the clip in seconds",
+				},
+				"fps": map[string]any{
+					"type":        "integer",
+					"description": "Frames per second",
+				},
+				"negative_prompt": map[string]any{
+					"type":        "string",
+					"description": "Explicitly state what should not be included in the video",
+				},
+				"enhance_prompt": map[string]any{
+					"type":        "boolean",
+					"description": "Whether to use prompt rewriting logic to enhance quality",
+				},
+				"generate_audio": map[string]any{
+					"type":        "boolean",
+					"description": "Whether to generate audio along with the video",
+				},
+				"seed": map[string]any{
+					"type":        "integer",
+					"description": "RNG seed for consistent results",
+				},
+				"person_generation": map[string]any{
+					"type":        "string",
+					"description": "Person generation policy: 'dont_allow' or 'allow_adult'",
+					"enum":        []string{"dont_allow", "allow_adult"},
+				},
+				"reference_images": map[string]any{
+					"type":        "array",
+					"description": "Up to 3 reference images to preserve subject/style appearance (Veo 3.1 only)",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"image_path": map[string]any{
+								"type":        "string",
+								"description": "Path to the local reference image file",
+							},
+							"reference_type": map[string]any{
+								"type":        "string",
+								"description": "Reference type: 'ASSET' (guides subject/person details) or 'STYLE' (guides theme/colors)",
+								"enum":        []string{"ASSET", "STYLE"},
+							},
+						},
+						"required": []string{"image_path"},
+					},
 				},
 			},
 			"required": []string{"prompt"},
@@ -161,7 +282,32 @@ func main() {
 			model = getDefaultModel()
 		}
 
-		res, err := generateVideoHelper(ctx, client, prompt, model, nil)
+		// Prepare Config
+		config := &genai.GenerateVideosConfig{
+			AspectRatio:      toolArgs.AspectRatio,
+			Resolution:       toolArgs.Resolution,
+			DurationSeconds:  toolArgs.DurationSeconds,
+			FPS:              toolArgs.FPS,
+			NegativePrompt:   toolArgs.NegativePrompt,
+			GenerateAudio:    toolArgs.GenerateAudio,
+			Seed:             toolArgs.Seed,
+			PersonGeneration: toolArgs.PersonGeneration,
+		}
+		if toolArgs.EnhancePrompt != nil {
+			config.EnhancePrompt = *toolArgs.EnhancePrompt
+		}
+
+		// Resolve Reference Images
+		refImages, err := resolveReferenceImages(toolArgs.ReferenceImages)
+		if err != nil {
+			return formatJSONResult(nil, err)
+		}
+
+		source := &genai.GenerateVideosSource{
+			Prompt: prompt,
+		}
+
+		res, err := generateVideoHelper(ctx, client, model, source, config, refImages)
 		return formatJSONResult(res, err)
 	})
 
@@ -245,8 +391,372 @@ func main() {
 			MIMEType:   mimeType,
 		}
 
-		res, err := generateVideoHelper(ctx, client, prompt, model, img)
+		source := &genai.GenerateVideosSource{
+			Prompt: prompt,
+			Image:  img,
+		}
+
+		res, err := generateVideoHelper(ctx, client, model, source, nil, nil)
 		return formatJSONResult(res, err)
+	})
+
+	// --- extend_video ---
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "extend_video",
+		Description: "Extend a previously generated Veo video by 7 seconds. Veo 3.1 & 3.1 Fast only. Input video must be 141s or less.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"prompt": map[string]any{
+					"type":        "string",
+					"description": "Text prompt describing the extension action/motion",
+				},
+				"video_uri": map[string]any{
+					"type":        "string",
+					"description": "Gemini API URI of previously generated video to extend (preferred, starts with https:// or gs://)",
+				},
+				"video_path": map[string]any{
+					"type":        "string",
+					"description": "Path to local video file of a previously generated video to extend",
+				},
+				"model": map[string]any{
+					"type":        "string",
+					"description": "Veo model to use (Veo 3.1 or Veo 3.1 Fast only; Lite is not supported for extension)",
+					"default":     "veo-3.1-fast-generate-preview",
+				},
+				"aspect_ratio": map[string]any{
+					"type":        "string",
+					"description": "Aspect ratio (must match original video)",
+					"enum":        []string{"16:9", "9:16"},
+				},
+				"resolution": map[string]any{
+					"type":        "string",
+					"description": "Resolution: '720p' or '1080p'",
+					"enum":        []string{"720p", "1080p"},
+				},
+				"duration_seconds": map[string]any{
+					"type":        "integer",
+					"description": "Duration of the extension in seconds",
+				},
+				"fps": map[string]any{
+					"type":        "integer",
+					"description": "Frames per second",
+				},
+				"negative_prompt": map[string]any{
+					"type":        "string",
+					"description": "Explicitly state what should not be included in the extension",
+				},
+				"enhance_prompt": map[string]any{
+					"type":        "boolean",
+					"description": "Whether to use prompt rewriting logic",
+				},
+				"generate_audio": map[string]any{
+					"type":        "boolean",
+					"description": "Whether to generate audio along with the video",
+				},
+				"seed": map[string]any{
+					"type":        "integer",
+					"description": "RNG seed",
+				},
+				"person_generation": map[string]any{
+					"type":        "string",
+					"description": "Person generation policy: 'dont_allow' or 'allow_adult'",
+					"enum":        []string{"dont_allow", "allow_adult"},
+				},
+			},
+			"required": []string{"prompt"},
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args json.RawMessage) (*mcp.CallToolResult, any, error) {
+		var toolArgs ExtendVideoArgs
+		if err := json.Unmarshal(args, &toolArgs); err != nil {
+			return nil, nil, err
+		}
+
+		if strings.TrimSpace(toolArgs.Prompt) == "" {
+			return formatJSONResult(nil, fmt.Errorf("prompt cannot be empty"))
+		}
+
+		if toolArgs.VideoURI == "" && toolArgs.VideoPath == "" {
+			return formatJSONResult(nil, fmt.Errorf("either video_uri or video_path must be provided to extend a video"))
+		}
+
+		model := toolArgs.Model
+		prompt := toolArgs.Prompt
+
+		parsedPrompt, detectedModel := parseModelAndPrompt(prompt)
+		if detectedModel != "" {
+			if model == "" {
+				model = detectedModel
+			}
+			prompt = parsedPrompt
+		}
+
+		if model == "" {
+			model = getDefaultModel()
+		}
+
+		// Resolve reference images if any
+		refImages, err := resolveReferenceImages(toolArgs.ReferenceImages)
+		if err != nil {
+			return formatJSONResult(nil, err)
+		}
+
+		// Resolve the video source
+		video, err := resolveVideo(toolArgs.VideoURI, toolArgs.VideoPath)
+		if err != nil {
+			return formatJSONResult(nil, err)
+		}
+
+		config := &genai.GenerateVideosConfig{
+			AspectRatio:      toolArgs.AspectRatio,
+			Resolution:       toolArgs.Resolution,
+			DurationSeconds:  toolArgs.DurationSeconds,
+			FPS:              toolArgs.FPS,
+			NegativePrompt:   toolArgs.NegativePrompt,
+			GenerateAudio:    toolArgs.GenerateAudio,
+			Seed:             toolArgs.Seed,
+			PersonGeneration: toolArgs.PersonGeneration,
+		}
+		if toolArgs.EnhancePrompt != nil {
+			config.EnhancePrompt = *toolArgs.EnhancePrompt
+		}
+
+		source := &genai.GenerateVideosSource{
+			Prompt: prompt,
+			Video:  video,
+		}
+
+		res, err := generateVideoHelper(ctx, client, model, source, config, refImages)
+		return formatJSONResult(res, err)
+	})
+
+	// --- generate_extended_sequence ---
+	mcp.AddTool(s, &mcp.Tool{
+		Name:        "generate_extended_sequence",
+		Description: "Generate a sequence of extended videos from multiple sequential prompts and automatically combine them using ffmpeg if available. Supports per-segment prompts and reference images.",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"prompts": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "string",
+					},
+					"description": "List of sequential prompt strings. Simple mode (all segments will share global reference_images if provided).",
+				},
+				"segments": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"prompt": map[string]any{
+								"type":        "string",
+								"description": "Prompt for this segment",
+							},
+							"reference_images": map[string]any{
+								"type": "array",
+								"items": map[string]any{
+									"type": "object",
+									"properties": map[string]any{
+										"path": map[string]any{
+											"type":        "string",
+											"description": "Absolute local path to image",
+										},
+										"type": map[string]any{
+											"type":        "string",
+											"description": "Reference type: 'ASSET' or 'STYLE'",
+										},
+									},
+									"required": []string{"path"},
+								},
+								"description": "Optional list of up to 3 reference images for this specific segment",
+							},
+						},
+						"required": []string{"prompt"},
+					},
+					"description": "Advanced mode: List of sequential segments, each with its own prompt and optional reference images.",
+				},
+				"model": map[string]any{
+					"type":        "string",
+					"description": "Veo model to use (Veo 3.1 or Veo 3.1 Fast; Lite is not supported for extension)",
+					"default":     "veo-3.1-fast-generate-preview",
+				},
+				"aspect_ratio": map[string]any{
+					"type":        "string",
+					"description": "Aspect ratio (must match original video)",
+					"enum":        []string{"16:9", "9:16"},
+				},
+				"resolution": map[string]any{
+					"type":        "string",
+					"description": "Resolution: '720p' or '1080p'",
+					"enum":        []string{"720p", "1080p"},
+				},
+				"duration_seconds": map[string]any{
+					"type":        "integer",
+					"description": "Duration of the extension in seconds",
+				},
+				"fps": map[string]any{
+					"type":        "integer",
+					"description": "Frames per second",
+				},
+				"negative_prompt": map[string]any{
+					"type":        "string",
+					"description": "Explicitly state what should not be included",
+				},
+				"enhance_prompt": map[string]any{
+					"type":        "boolean",
+					"description": "Whether to use prompt rewriting logic",
+				},
+				"generate_audio": map[string]any{
+					"type":        "boolean",
+					"description": "Whether to generate audio",
+				},
+				"seed": map[string]any{
+					"type":        "integer",
+					"description": "RNG seed",
+				},
+				"person_generation": map[string]any{
+					"type":        "string",
+					"description": "Person generation policy: 'dont_allow' or 'allow_adult'",
+					"enum":        []string{"dont_allow", "allow_adult"},
+				},
+				"reference_images": map[string]any{
+					"type": "array",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"path": map[string]any{
+								"type":        "string",
+								"description": "Absolute local path to image",
+							},
+							"type": map[string]any{
+								"type":        "string",
+								"description": "Reference type: 'ASSET' or 'STYLE'",
+							},
+						},
+						"required": []string{"path"},
+					},
+					"description": "Global reference images to use as fallback for segments that do not have their own reference_images specified.",
+				},
+			},
+		},
+	}, func(ctx context.Context, req *mcp.CallToolRequest, args json.RawMessage) (*mcp.CallToolResult, any, error) {
+		var toolArgs GenerateExtendedSequenceArgs
+		if err := json.Unmarshal(args, &toolArgs); err != nil {
+			return nil, nil, err
+		}
+
+		var runSegments []SegmentArgs
+		if len(toolArgs.Segments) > 0 {
+			runSegments = toolArgs.Segments
+		} else if len(toolArgs.Prompts) > 0 {
+			for _, p := range toolArgs.Prompts {
+				runSegments = append(runSegments, SegmentArgs{Prompt: p})
+			}
+		} else {
+			return formatJSONResult(nil, fmt.Errorf("either prompts or segments array must be provided"))
+		}
+
+		model := toolArgs.Model
+		if model == "" {
+			model = getDefaultModel()
+		}
+
+		config := &genai.GenerateVideosConfig{
+			AspectRatio:      toolArgs.AspectRatio,
+			Resolution:       toolArgs.Resolution,
+			DurationSeconds:  toolArgs.DurationSeconds,
+			FPS:              toolArgs.FPS,
+			NegativePrompt:   toolArgs.NegativePrompt,
+			GenerateAudio:    toolArgs.GenerateAudio,
+			Seed:             toolArgs.Seed,
+			PersonGeneration: toolArgs.PersonGeneration,
+		}
+		if toolArgs.EnhancePrompt != nil {
+			config.EnhancePrompt = *toolArgs.EnhancePrompt
+		}
+
+		// Resolve global fallback reference images if any
+		globalRefImages, err := resolveReferenceImages(toolArgs.ReferenceImages)
+		if err != nil {
+			return formatJSONResult(nil, err)
+		}
+
+		var segments []VideoGenerationResponse
+		var segmentPaths []string
+
+		for i, seg := range runSegments {
+			promptStr := strings.TrimSpace(seg.Prompt)
+			if promptStr == "" {
+				return formatJSONResult(nil, fmt.Errorf("prompt at index %d cannot be empty", i))
+			}
+
+			// Model autodetection inside inline prompt
+			parsedPrompt, detectedModel := parseModelAndPrompt(promptStr)
+			if detectedModel != "" {
+				model = detectedModel
+				promptStr = parsedPrompt
+			}
+
+			// Resolve reference images for this segment (fallback to global if segment specific ones are empty)
+			var segmentRefImages []*genai.VideoGenerationReferenceImage
+			if len(seg.ReferenceImages) > 0 {
+				segmentRefImages, err = resolveReferenceImages(seg.ReferenceImages)
+				if err != nil {
+					return formatJSONResult(nil, err)
+				}
+			} else {
+				segmentRefImages = globalRefImages
+			}
+
+			var source *genai.GenerateVideosSource
+			if i == 0 {
+				// Base video
+				source = &genai.GenerateVideosSource{
+					Prompt: promptStr,
+				}
+			} else {
+				// Extend from previous segment's URI
+				prevSegment := segments[i-1]
+				source = &genai.GenerateVideosSource{
+					Prompt: promptStr,
+					Video: &genai.Video{
+						URI: prevSegment.VideoURI,
+					},
+				}
+			}
+
+			fmt.Fprintf(os.Stderr, "Generating segment %d/%d: %s\n", i+1, len(runSegments), promptStr)
+			res, err := generateVideoHelper(ctx, client, model, source, config, segmentRefImages)
+			if err != nil {
+				// If an extension fails, we return what we generated so far with the error details
+				return formatJSONResult(&ExtendedSequenceResponse{
+					Segments:        segments,
+					CombinedSuccess: false,
+					CombinedMessage: fmt.Sprintf("Failed at segment %d: %v", i+1, err),
+				}, nil)
+			}
+
+			segments = append(segments, *res)
+			segmentPaths = append(segmentPaths, res.VideoPath)
+		}
+
+		// Try combining videos using ffmpeg
+		combinedPath, err := combineVideosFFmpeg(segmentPaths)
+		success := err == nil
+		msg := "Successfully combined segments into a single video."
+		if err != nil {
+			msg = fmt.Sprintf("Combining segments skipped or failed: %v", err)
+		}
+
+		res := &ExtendedSequenceResponse{
+			CombinedVideoPath: combinedPath,
+			Segments:          segments,
+			CombinedSuccess:   success,
+			CombinedMessage:   msg,
+		}
+
+		return formatJSONResult(res, nil)
 	})
 
 	// --- list_generated_videos ---
@@ -364,27 +874,101 @@ func ValidateAuthentication(cliKey string) (string, error) {
 	return "", fmt.Errorf("ERROR: No valid API key found. Please set GEMINI_API_KEY, GEMINI_CLI_APP, or other API key environment variable")
 }
 
-func generateVideoHelper(ctx context.Context, client *genai.Client, prompt string, model string, img *genai.Image) (*VideoGenerationResponse, error) {
+func resolveReferenceImages(images []ReferenceImageArgs) ([]*genai.VideoGenerationReferenceImage, error) {
+	var refImages []*genai.VideoGenerationReferenceImage
+	for _, imgArg := range images {
+		path := strings.TrimSpace(imgArg.ImagePath)
+		if path == "" {
+			return nil, fmt.Errorf("reference image path cannot be empty")
+		}
+		resolved, err := resolveSafePath(path)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := os.Stat(resolved); os.IsNotExist(err) {
+			return nil, fmt.Errorf("reference image not found: %s", resolved)
+		}
+		data, err := os.ReadFile(resolved)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read reference image %s: %w", resolved, err)
+		}
+		mimeType := "image/jpeg"
+		ext := strings.ToLower(filepath.Ext(resolved))
+		if ext == ".png" {
+			mimeType = "image/png"
+		} else if ext == ".webp" {
+			mimeType = "image/webp"
+		}
+
+		refType := genai.VideoGenerationReferenceTypeAsset
+		if strings.ToUpper(imgArg.ReferenceType) == "STYLE" {
+			refType = genai.VideoGenerationReferenceTypeStyle
+		}
+
+		refImages = append(refImages, &genai.VideoGenerationReferenceImage{
+			Image: &genai.Image{
+				ImageBytes: data,
+				MIMEType:   mimeType,
+			},
+			ReferenceType: refType,
+		})
+	}
+	return refImages, nil
+}
+
+func resolveVideo(videoURI, videoPath string) (*genai.Video, error) {
+	if videoURI != "" {
+		return &genai.Video{
+			URI: videoURI,
+		}, nil
+	}
+	if videoPath != "" {
+		resolved, err := resolveSafePath(videoPath)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := os.Stat(resolved); os.IsNotExist(err) {
+			return nil, fmt.Errorf("extension video file not found: %s", resolved)
+		}
+		data, err := os.ReadFile(resolved)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read video file %s: %w", resolved, err)
+		}
+		mimeType := "video/mp4"
+		ext := strings.ToLower(filepath.Ext(resolved))
+		if ext == ".mov" {
+			mimeType = "video/quicktime"
+		} else if ext == ".avi" {
+			mimeType = "video/x-msvideo"
+		} else if ext == ".webm" {
+			mimeType = "video/webm"
+		}
+		return &genai.Video{
+			VideoBytes: data,
+			MIMEType:   mimeType,
+		}, nil
+	}
+	return nil, nil
+}
+
+func generateVideoHelper(ctx context.Context, client *genai.Client, model string, source *genai.GenerateVideosSource, config *genai.GenerateVideosConfig, refImages []*genai.VideoGenerationReferenceImage) (*VideoGenerationResponse, error) {
 	startTime := time.Now()
-	fmt.Fprintf(os.Stderr, "Starting video generation. Model: %s, Prompt: %s\n", model, prompt)
+	fmt.Fprintf(os.Stderr, "Starting video generation. Model: %s, Prompt: %s\n", model, source.Prompt)
 
-	var operation *genai.GenerateVideosOperation
-	var err error
-
-	if img != nil {
-		fmt.Fprintln(os.Stderr, "Calling GenerateVideos with image input...")
-		operation, err = client.Models.GenerateVideos(ctx, model, prompt, img, nil)
-	} else {
-		fmt.Fprintln(os.Stderr, "Calling GenerateVideos with text input...")
-		operation, err = client.Models.GenerateVideos(ctx, model, prompt, nil, nil)
+	if config == nil {
+		config = &genai.GenerateVideosConfig{}
+	}
+	if len(refImages) > 0 {
+		config.ReferenceImages = refImages
 	}
 
+	operation, err := client.Models.GenerateVideosFromSource(ctx, model, source, config)
 	if err != nil {
 		return nil, fmt.Errorf("generation request failed: %w", err)
 	}
 
 	// Poll for completion
-	maxPollTime := 10 * time.Minute
+	maxPollTime := 15 * time.Minute
 	pollInterval := 15 * time.Second
 
 	for !operation.Done {
@@ -425,15 +1009,26 @@ func generateVideoHelper(ctx context.Context, client *genai.Client, prompt strin
 	genTime := time.Since(startTime).Seconds()
 	fmt.Fprintf(os.Stderr, "Successfully generated and saved video to %s (%d bytes) in %.1fs\n", savePath, fileSize, genTime)
 
+	var negPrompt *string
+	if config.NegativePrompt != "" {
+		negPrompt = &config.NegativePrompt
+	}
+
+	aspectRatio := "16:9"
+	if config.AspectRatio != "" {
+		aspectRatio = config.AspectRatio
+	}
+
 	return &VideoGenerationResponse{
 		VideoPath:      savePath,
 		Filename:       filename,
 		Model:          model,
-		Prompt:         prompt,
-		NegativePrompt: nil,
+		Prompt:         source.Prompt,
+		NegativePrompt: negPrompt,
 		GenerationTime: genTime,
 		FileSize:       fileSize,
-		AspectRatio:    "16:9",
+		AspectRatio:    aspectRatio,
+		VideoURI:       generatedVideo.Video.URI,
 	}, nil
 }
 
@@ -597,3 +1192,51 @@ func getDefaultModel() string {
 	return "veo-3.1-fast-generate-preview"
 }
 
+func combineVideosFFmpeg(paths []string) (string, error) {
+	if len(paths) == 0 {
+		return "", fmt.Errorf("no paths to combine")
+	}
+	if len(paths) == 1 {
+		return paths[0], nil
+	}
+
+	// Check if ffmpeg is in PATH
+	ffmpegPath, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return "", fmt.Errorf("ffmpeg not found in PATH")
+	}
+
+	// Create temp file for concat demuxer
+	tmpFile, err := os.CreateTemp("", "veo_concat_*.txt")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp concat file: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+
+	for _, path := range paths {
+		// Escape single quotes for ffmpeg
+		escapedPath := strings.ReplaceAll(path, "'", "'\\''")
+		_, err := fmt.Fprintf(tmpFile, "file '%s'\n", escapedPath)
+		if err != nil {
+			tmpFile.Close()
+			return "", fmt.Errorf("failed to write to temp file: %w", err)
+		}
+	}
+	tmpFile.Close()
+
+	// Generate a unique output file name in outputDir
+	timestamp := time.Now().Format("20060102_150405")
+	outputFilename := fmt.Sprintf("veo3_combined_%s.mp4", timestamp)
+	outputPath := filepath.Join(outputDir, outputFilename)
+
+	// Run ffmpeg
+	cmd := exec.Command(ffmpegPath, "-y", "-f", "concat", "-safe", "0", "-i", tmpFile.Name(), "-c", "copy", outputPath)
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("ffmpeg command failed: %w", err)
+	}
+
+	return outputPath, nil
+}

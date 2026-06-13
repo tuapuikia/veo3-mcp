@@ -56,30 +56,79 @@ The server supports the following environment variable configurations:
 ## MCP Tools
 
 ### 1. `generate_video`
-Generate a video using Google Veo 3 from a text prompt.
+Generate a video using Google Veo from a text prompt. Supports advanced configuration parameters and up to 3 reference images.
 - **Arguments**:
   - `prompt` (string, required): Descriptive prompt.
-  - `model` (string, optional): Veo model to use (defaults to `veo-3.1-fast-generate-preview`; other valid models: `veo-3.1-generate-preview`, `veo-3.1-lite-generate-preview`, `veo-2.0-generate-001`; arbitrary custom models are also accepted).
+  - `model` (string, optional): Veo model to use (e.g. `veo-3.1-fast-generate-preview`, `veo-3.1-generate-preview`).
+  - `aspect_ratio` (string, optional): Aspect ratio (e.g., `"16:9"`, `"9:16"`, `"21:9"`, `"1:1"`, `"4:3"`).
+  - `resolution` (string, optional): Resolution (`"720p"`, `"1080p"`).
+  - `duration_seconds` (integer, optional): Duration (e.g., `5`, `6`, `7`, `8`).
+  - `fps` (integer, optional): Frames per second (`24`, `30`).
+  - `seed` (integer, optional): Random seed.
+  - `generate_audio` (boolean, optional): Set to `true` to generate matching audio.
+  - `negative_prompt` (string, optional): Elements to avoid in the video.
+  - `person_generation` (string, optional): Controls person generation quality/behavior (e.g., `"dont_allow"`, `"allow_adult"`).
+  - `reference_images` (array, optional): Up to 3 reference images to guide generation. Each item contains:
+    - `path` (string, required): Absolute local path to image file.
+    - `type` (string, required): `"ASSET"` (replicates subject identity/face) or `"STYLE"` (replicates aesthetic/theme).
 
-### Inline Prompt Model Selection (Natural Language)
-Instead of passing the `model` parameter explicitly, you can specify it directly inside your prompt using natural language keywords or explicit instructions. The server automatically detects the model, overrides the selection, and cleans the prompt before submission.
+#### Inline Prompt Model Selection (Natural Language)
+Instead of passing the `model` parameter explicitly, you can specify it directly inside your prompt using natural language keywords or explicit instructions.
 - **Examples**:
-  - *"A futuristic city in the style of cyberpunk **using model veo-3.1-lite-generate-preview***"
   - *"A soaring eagle over grand canyon **with veo 3.1 lite***"
   - *"Cat chasing a laser **using veo 2***"
-  - *"Majestic waterfall in forest **model veo-custom-model***" (Arbitrary custom models can also be overridden this way)
 
-### 2. `generate_video_from_image`
+### 2. `generate_video_from_image` (Image-to-Video / Starter Frame)
 Animate a starting image with natural motion.
 - **Arguments**:
-  - `prompt` (string, required): Descriptive movement prompt (also supports inline prompt model selection).
-  - `image_path` (string, required): Absolute path or path relative to the output directory.
-  - `model` (string, optional): Same model selection options as above.
+  - `prompt` (string, required): Descriptive movement prompt.
+  - `image_path` (string, required): Absolute local path to starter image file.
+  - `model` (string, optional): Veo model to use.
 
-### 3. `list_generated_videos`
+> [!NOTE]
+> **Starter Image vs Reference Image**:
+> - **Starter Image** (`generate_video_from_image`): The image becomes the **exact starting frame** of the video, which then animates forward.
+> - **Reference Image** (`generate_video` with `reference_images`): The image acts as an **influence/ingredient** (like subject face or color scheme). The video does not start on this frame, but uses its subject or style. When using `ASSET` reference images, the prompt **must explicitly describe** the subject (e.g., *"A cinematic video of the man from the reference image..."*) so Veo knows to match the face/identity.
+
+### 3. `extend_video`
+Extend an existing Veo-generated video by **7 seconds** per extension.
+- **Arguments**:
+  - `prompt` (string, required): Descriptive prompt describing the **continuation** of the scene.
+  - `video_uri` (string, optional): Direct API URI of the source video (e.g., `input_file_0`).
+  - `video_path` (string, optional): Absolute path to the local video file.
+  - `model` (string, optional): Model to use (must be Veo 3.1 or 3.1 Fast; Lite is not supported for extension).
+
+#### Extension Guidelines & Max Length Limits
+- **Max Input Length**: The input video being extended must be **≤ 141 seconds**.
+- **Max Output Length**: Since each extension adds exactly 7 seconds, the theoretical maximum final video length is **148 seconds**.
+- **Resolution & Aspect Ratio**: Initial video must be `720p` and use either `16:9` or `9:16` aspect ratio.
+- **Prompt Strategy**: The extension prompt should specify **how the action progresses** seamlessly from the end of the previous clip. Avoid restarting the scene description.
+- **Example Usage**:
+  - *Original Prompt*: `"A cat pounces on a toy mouse on a living room rug."` (8 seconds)
+  - *Extension Prompt*: `"The cat successfully grabs the toy in its paws and begins grooming it."` (Extends to 15 seconds)
+
+### 4. `generate_extended_sequence`
+Generate a sequence of extended videos from multiple sequential prompts and automatically combine them using `ffmpeg` (if available on the system).
+- **Arguments**:
+  - `prompts` (array of strings, optional): Simple mode. List of sequential prompt strings. (All segments will share global `reference_images` fallback).
+  - `segments` (array of objects, optional): Advanced mode. List of segment objects. Each segment contains:
+    - `prompt` (string, required): Prompt for this specific segment.
+    - `reference_images` (array, optional): Up to 3 reference images (`path` and `type`) for this segment specifically.
+  - `reference_images` (array, optional): Global reference images used as fallback for segments that do not define their own.
+  - `model` (string, optional): Veo model to use (Veo 3.1 or Veo 3.1 Fast only).
+  - `aspect_ratio` (string, optional): Aspect ratio (e.g. `"16:9"`).
+  - `resolution` (string, optional): Resolution (e.g. `"720p"`).
+  - `generate_audio` (boolean, optional): Generate matching audio.
+- **How it works**:
+  1. Resolves prompts or segments uniformly.
+  2. Generates the base video segment using the first prompt (with its specified reference images).
+  3. Sequentially extends using the previous segment's API URI for each subsequent prompt (using that segment's specific reference images).
+  4. If `ffmpeg` is installed on the host system, it will combine all generated parts losslessly into a single `veo3_combined_<timestamp>.mp4` file. If `ffmpeg` is missing, it skips combination but returns all individual segments successfully.
+
+### 5. `list_generated_videos`
 List all generated videos in the output directory.
 
-### 4. `get_video_info`
+### 5. `get_video_info`
 Get detailed information about a generated video file.
 - **Arguments**:
   - `video_path` (string, required): Absolute or relative video file path.
